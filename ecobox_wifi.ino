@@ -1,5 +1,5 @@
 #include <DHT.h>
-#include <MHZ19.h>
+#include "MHZ19.h"
 #include "PMS.h"
 #include <SoftwareSerial.h>
 
@@ -24,7 +24,7 @@ SoftwareSerial pmsSerial(10, 9);
 PMS pms(pmsSerial);
 
 SoftwareSerial ppmSerial(3, 2);
-MHZ19 mhz(&ppmSerial);
+MHZ19 mhz;
 
 //SoftwareSerial pmsSerial(10, 11);
 //PMS pms(pmsSerial);
@@ -54,6 +54,14 @@ void setup() {
   pinMode(soundPin, INPUT);
   pinMode(DHTPIN, INPUT);
   dht.begin();
+
+  ppmSerial.begin(9600);
+  mhz.begin(ppmSerial);
+  mhz.setRange(2000);
+  mhz.calibrateZero();
+  mhz.setSpan(2000);
+  mhz.autoCalibration(false); 
+  ppmSerial.end();
 }
 
 
@@ -105,11 +113,9 @@ void getPm(){
 }
 void getCo2(){
     ppmSerial.begin(9600);
-    MHZ19_RESULT response = mhz.retrieveData();
-    if (response == MHZ19_RESULT_OK)
-    {
-      co2 = mhz.getCO2();
-    }
+      
+    co2 = mhz.getCO2();
+    
     ppmSerial.end();
 
 }
