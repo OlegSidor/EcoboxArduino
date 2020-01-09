@@ -1,7 +1,7 @@
 #include <DHT.h>
-#include "MHZ19.h"
 #include "PMS.h"
 #include <SoftwareSerial.h>
+#include <ArduinoJson.h>
 
 #define temperaturePin 5
 #define DHTPIN A1
@@ -11,7 +11,7 @@
 #define pmTimeOut 20000
 #define temperatureTimeout 2000
 #define soundTimeout 500
-#define co2Timeout 1000
+#define co2Timeout 2000
 #define pmTimeout 1000
 #define sendTimeout 300000
 //#define sendTimeout 60000
@@ -24,13 +24,12 @@ SoftwareSerial pmsSerial(10, 9);
 PMS pms(pmsSerial);
 
 SoftwareSerial ppmSerial(3, 2);
-MHZ19 mhz;
 
 //SoftwareSerial pmsSerial(10, 11);
 //PMS pms(pmsSerial);
 //
 //SoftwareSerial ppmSerial(12, 13);
-//MHZ19 mhz(&ppmSerial);
+//MHZ19 mhz;
 
 DHT dht(DHTPIN, DHT22);
 PMS::DATA data;
@@ -46,7 +45,8 @@ int pm2_5 = 0;
 int pm0_1 = 0;
 int pm10 = 0;
 
-int device_id = 9; 
+byte cmd[9] = {0xFF,0x01,0x86,0x00,0x00,0x00,0x00,0x00,0x79}; 
+unsigned char response[9];
 
 void setup() {
 
@@ -54,14 +54,6 @@ void setup() {
   pinMode(soundPin, INPUT);
   pinMode(DHTPIN, INPUT);
   dht.begin();
-
-  ppmSerial.begin(9600);
-  mhz.begin(ppmSerial);
-  mhz.setRange(2000);
-  mhz.calibrateZero();
-  mhz.setSpan(2000);
-  mhz.autoCalibration(false); 
-  ppmSerial.end();
 }
 
 
@@ -81,7 +73,18 @@ void loop() {
   getData();
   if(millis() - sendTime >= sendTimeout) {
      sendTime = millis();
-     Serial.print("/air/add/?lat=48.524283&lon=24.984165&sat=9&alt=245.00&speed=0.20&pm0_1="+String(pm0_1)+"&pm2_5="+String(pm2_5)+"&pm10="+String(pm10)+"&temperature="+String(temperature)+"&humidity="+String(humiture)+"&co2="+String(co2)+"&noise="+String(sound)+"&uid=0");
+     String json_string = "";
+      DynamicJsonDocument doc(512);
+      JsonObject data = doc.to<JsonObject>();
+      
+      data["pm0_1"] = String(pm0_1);
+      data["pm2_5"] = String(pm2_5);
+      data["pm10"] = String(pm10);
+      data["temperature"] = String(temperature);
+      data["humidity"] = String(humiture);
+      data["co2"] = String(co2);      
+      serializeJson(doc, json_string);
+     Serial.print(json_string);
   }
   
 }
@@ -112,12 +115,29 @@ void getPm(){
     pmsSerial.end();
 }
 void getCo2(){
-    ppmSerial.begin(9600);
-      
-    co2 = mhz.getCO2();
-    
-    ppmSerial.end();
+  
+  ppmSerial.begin(9600);
+  
+  ppmSerial.write(cmd, 9);
+  memset(response, 0, 9);
+  ppmSerial.readBytes(response, 9);
+  int i;
+  byte crc = 0;
+  for (i = 1; i < 8; i++) crc+=response[i];
+  crc = 255 - crc;
+  crc++;
 
+  if ( !(response[0] == 0xFF && response[1] == 0x86 && response[8] == crc) ) {
+    Serial.println("CRC error: " + String(crc) + " / "+ String(response[8]));
+    return;
+  } else {
+    unsigned int responseHigh = (unsigned int) response[2];
+    unsigned int responseLow = (unsigned int) response[3];
+    unsigned int ppm = (256*responseHigh) + responseLow;
+    co2 = ppm;
+  }
+
+   ppmSerial.end();
 }
 
 void getData() {
